@@ -1,0 +1,8 @@
+rofi-fox
+build-project.py
+about.txt
+main.py
+pkg/
+src/
+*.tar.*
+*.pkg.tar.zst
