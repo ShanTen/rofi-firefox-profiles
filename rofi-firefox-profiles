@@ -6,6 +6,7 @@ import subprocess
 import shutil
 from pathlib import Path
 import argparse
+import configparser
 
 
 def log_info(msg):
@@ -79,8 +80,14 @@ def get_profile_dirs(browser, profile_base_path):
 def rofi_select(profiles, rofi_theme=None):
     input_str = "\n".join(p.name for p in profiles)
     rofi_cmd = ["rofi", "-dmenu", "-p", "select profile"]
+
     if rofi_theme:
-        rofi_cmd += ["-theme", rofi_theme]
+        theme_path = Path(rofi_theme).expanduser()
+        if theme_path.exists():
+            rofi_cmd += ["-theme", str(theme_path)]
+            log_info(f"using rofi theme: {theme_path}")
+        else:
+            log_warn(f"rofi theme not found: {theme_path}, using default")
 
     try:
         result = subprocess.run(
@@ -92,20 +99,53 @@ def rofi_select(profiles, rofi_theme=None):
         return None
 
 
-def launch_browser(browser, profile_dir):
+def launch_browser(browser, profile_dir, browser_command=None):
     try:
+        cmd = browser_command or browser
         if browser == "firefox":
-            subprocess.Popen(["firefox", "--profile", str(profile_dir)])
+            subprocess.Popen([cmd, "--profile", str(profile_dir)])
         elif browser == "zen-browser":
-            subprocess.Popen(["zen-browser", "--profile", str(profile_dir)])
+            subprocess.Popen([cmd, "--profile", str(profile_dir)])
         elif browser == "brave":
-            subprocess.Popen(["brave", f"--profile-directory={profile_dir.name}"])
+            # brave uses --profile-directory with just profile folder name
+            subprocess.Popen([cmd, f"--profile-directory={profile_dir.name}"])
+        else:
+            # fallback to generic
+            subprocess.Popen([cmd])
         log_info(f"launched {browser} with profile: {profile_dir.name}")
     except Exception as e:
         log_error(f"failed to launch {browser} with profile {profile_dir}: {e}")
         sys.exit(1)
     finally:
         os._exit(0)
+
+
+def load_config(browser):
+    config_path = Path.home() / ".config" / "rofi-firefox-profiles" / "config.ini"
+    config = configparser.ConfigParser()
+    config_data = {}
+
+    if config_path.exists():
+        config.read(config_path)
+
+        # global settings
+        global_section = "settings"
+        if config.has_section(global_section):
+            if config.has_option(global_section, "debug"):
+                config_data["debug"] = config.getboolean(global_section, "debug")
+
+        # per-browser settings
+        if config.has_section(browser):
+            if config.has_option(browser, "profile_search_path"):
+                config_data["profile_base_path"] = Path(
+                    os.path.expanduser(config.get(browser, "profile_search_path"))
+                )
+            if config.has_option(browser, "browser_command"):
+                config_data["browser_command"] = config.get(browser, "browser_command")
+            if config.has_option(browser, "rofi_theme"):
+                config_data["rofi_theme"] = config.get(browser, "rofi_theme")
+
+    return config_data
 
 
 def main():
@@ -124,6 +164,8 @@ def main():
     browser = args.browser or detect_default_browser()
     log_info(f"using browser: {browser}")
 
+    config = load_config(browser)
+
     default_paths = {
         "firefox": Path.home() / ".mozilla" / "firefox",
         "zen-browser": Path.home() / ".zen",
@@ -133,22 +175,26 @@ def main():
     profile_base_path = (
         Path(os.path.expanduser(args.profile_base_path))
         if args.profile_base_path
-        else default_paths[browser]
+        else config.get("profile_base_path", default_paths[browser])
     )
+
+    rofi_theme = args.rofi_theme or config.get("rofi_theme")
+
+    browser_command = config.get("browser_command")
 
     profiles = get_profile_dirs(browser, profile_base_path)
     if not profiles:
         log_error(f"no profiles found in {profile_base_path}")
         sys.exit(1)
 
-    selected_name = rofi_select(profiles, args.rofi_theme)
+    selected_name = rofi_select(profiles, rofi_theme)
     if not selected_name:
         log_info("no profile selected. exiting.")
         sys.exit(0)
 
     selected_profile = profile_base_path / selected_name
     if selected_profile.exists():
-        launch_browser(browser, selected_profile)
+        launch_browser(browser, selected_profile, browser_command)
     else:
         log_error(f"selected profile not found: {selected_profile}")
         sys.exit(1)
