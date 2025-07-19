@@ -1,13 +1,17 @@
 # Maintainer: Shantanu R <shantanu@ramanujapuram.com>
 
 pkgname=rofi-firefox-profiles
-pkgver=1.0.1
+pkgver=1.1.1
 pkgrel=3
-pkgdesc="Launch Firefox with a selected profile using rofi"
+pkgdesc="Launch your default browser (firefox, zen, brave) with a selected profile using your default or custom rofi config"
 arch=('any')
 url="https://github.com/shanten/rofi-firefox-profiles"
 license=('MIT')
-depends=('python' 'rofi' 'firefox')
+depends=('python' 'rofi')
+optdepends=('firefox: optional if using firefox explicitly'
+            'zen-browser: optional if using zen explicitly' 
+            'brave: optional if using brave explicitly'
+           )
 source=(
   "$pkgname"
   "config.ini"
